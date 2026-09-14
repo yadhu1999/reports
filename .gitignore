@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.data/
+.env
+*.tsbuildinfo
+.sites-runtime/
+.env.*
+!.env.example
+.DS_Store
+*.log
+coverage/
+tests/.browser-cache-*/
+# Local validation reports contain tenant-specific observations.
+docs/canned-report-audit.md
+docs/datatap-field-audit.md
+docs/other-table-validation-*.md

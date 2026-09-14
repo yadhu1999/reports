@@ -1,124 +1,224 @@
 # Esper DataTap Reporting
 
-A runnable implementation of the reporting MVP described in `specs/`. React + TypeScript provides the visual workspace; an Express API owns metadata, validation, SQL compilation, asynchronous execution, credentials, and durable saved definitions.
+A reporting and dashboard application for Esper DataTap. Build reports without writing SQL, visualize device data, and combine saved reports into dashboards. Run locally with sample data or connect an Esper tenant for live DataTap queries.
 
-## Run locally
+Built with React, TypeScript, Vite, Express, Recharts, and Dexie/IndexedDB.
 
-Requires Node.js 22.16 or newer and npm.
+## Quick start
+
+Requires **Node.js 22.16 or newer** and npm.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open **http://localhost:3000**. Development defaults to a clearly labeled demo workspace. It generates 30 daily snapshots across the five specified datasets, with 1,284 devices in the latest snapshot. No DataTap account is required. Saved objects live in `.data/demo.json` and survive restarts. Sample source records are regenerated relative to the current date on server start.
+Open [localhost:3000](http://localhost:3000).
 
-```sh
-npm run build   # TypeScript check and optimized frontend bundle
-npm test        # Query engine, adapter, and authenticated HTTP integration tests
-npm run format  # Format source and tests
+Development starts in a local demo workspace with no login or API key required. Sample data contains 30 daily snapshots and 1,284 devices in the latest snapshot. Saved reports, visualizations, and dashboards persist in `.data/demo.json`; sample source records regenerate on server startup.
+
+The demo workspace bypasses authentication. Keep it local; use authenticated configuration for a shared deployment.
+
+## Features
+
+- Explore Devices, Device Statistics, Applications, Groups, and Users.
+- Build detail or summary reports with selected columns, display labels, typed filters, grouping, aggregates, sorting, and row limits.
+- Query the latest snapshot, a specific snapshot, or a historical date range.
+- Join Devices to Groups, matching snapshot dates for historical queries.
+- Create tables, bar charts, line/area charts, pie/donut charts, and KPIs.
+- Save, duplicate, edit, and organize reports, visualizations, and dashboards.
+- Rearrange and resize dashboard widgets.
+- Export result tables as CSV and chart plots as PNG.
+- Inspect generated SQL without accepting arbitrary SQL from the browser.
+- Reuse results through browser and server caches, with freshness indicators and quota-aware refreshes.
+- Enforce viewer, analyst, and administrator roles in authenticated mode.
+
+Open a report to load its results. After editing its fields or filters, select **Run report** to apply changes. Previews are capped at 100 rows; full executions are capped at 10,000. Explicit refreshes still respect DataTap quotas.
+
+## Connect to DataTap
+
+### Through the application
+
+1. Open **Connection settings** as an administrator.
+2. Enter the Esper tenant slug, such as `acme`, and its API key.
+3. Use **Test connection** to verify access, or **Save & use live data** to verify and activate it.
+
+The endpoint is derived as:
+
+```text
+https://{tenant}-api.esper.cloud/api/data-tap/v0
 ```
 
-`npm start` serves the compiled frontend and API. Production requires explicit authentication configuration. For a local production-bundle demo, run `DEMO_MODE=true npm start`; this intentionally bypasses authentication and must not be exposed as a production service.
+Connection tests run a bounded device query and consume DataTap requests. Failed tests preserve the previous connection. Leaving the API-key field blank retains the current key only when the tenant is unchanged.
 
-## Included workflows
+Saved connections override environment credentials for the application workspace. **Disconnect** removes the saved credential and disables environment fallback. Local workspaces return to sample data; authenticated workspaces remain unconfigured until reconnected. Connection changes invalidate cached results while preserving saved report definitions.
 
-- Fleet dashboard with independently loading KPI, bar, donut, and table widgets.
-- Reporting overview, searchable/filterable report list, visualization library, dashboard cards and favorites.
-- Metadata-backed exploration of Devices, Device Statistics, Applications, Groups, and Users, including data and schema tabs.
-- Visual report builder with field search, selected-column drag and keyboard ordering, display labels, typed filters, multiple sorts, row limits, and detail/summary modes.
-- COUNT, COUNT DISTINCT, SUM, AVG, MIN, MAX, with type validation; multiple dimensions and metrics.
-- Latest snapshot, specific snapshot, historical date ranges, and snapshot-aware Devices → Groups relationships.
-- Table, vertical/horizontal/stacked bar, line, area, pie, donut, and KPI rendering with compatibility checks and display options.
-- Separate saved report and visualization definitions; create, edit, duplicate, delete, and reopen.
-- Dashboards that reference saved definitions, with add/remove/duplicate, drag rearrangement, keyboard ordering, and pointer/keyboard resizing. Save commits the layout; Cancel restores it.
-- CSV export of the currently executed result, with spreadsheet-formula protection. Use **Run report** for up to 10,000 rows; automatic previews are limited to 100.
-- PNG export of chart plots, read-only generated SQL inspection, loading/empty/error/retry states.
-- Server-side sessions, viewer/analyst/administrator role checks, tenant-scoped resources and executions, request-origin checks, login throttling, and audit events.
+Credentials stay on the server. Saved keys are encrypted with AES-256-GCM in `.data/connections.json`, using `.data/connection.key`. Both files have owner-only permissions. Back them up together and never commit them. Redirects are disabled on credential-bearing DataTap requests.
 
-## Connect live DataTap
+### Authenticated configuration
 
-### Configure in the app
+Copy `.env.example` to `.env` and configure authentication:
 
-Open **Connection settings** in the sidebar as an administrator. Enter your Esper tenant slug (for example, `acme` from `acme.esper.cloud`) and API key. **Test connection** checks DataTap access without changing the active source. **Save & use live data** verifies the connection and activates it immediately, including in the local sample workspace. Failed tests preserve the previous connection. Blank API-key input retains an existing key only when the tenant is unchanged.
+```sh
+cp .env.example .env
+npm run hash-password
+```
 
-The server derives `https://{tenant}-api.esper.cloud/api/data-tap/v0` and tests a bounded device query before saving. Keys are encrypted using AES-256-GCM in `.data/connections.json`; the server encryption key is `.data/connection.key`. Both files have owner-only permissions. Back up both together, keep the directory private, and never commit either. API responses and audit records do not contain saved credentials. Redirects are disabled on credential-bearing DataTap requests.
+The password utility accepts hidden input and prints a salted scrypt hash. Generate a session secret with:
 
-Connection settings are scoped to the authenticated application workspace. They override environment configuration for that workspace. **Disconnect** removes the saved credential and disables any environment fallback; local workspaces return to sample data, while authenticated production workspaces remain unconfigured until reconnected. Changing connections clears previous execution results. Report definitions remain available.
+```sh
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
+```
 
-The local demo workspace intentionally has no login and is bound to loopback; its settings are accessible to local users. Use the authenticated production configuration below for a shared deployment.
-
-### Environment configuration
-
-Copy `.env.example` to `.env`, set `DEMO_MODE=false`, and provide a secret and users. `.env` is ignored by Git and loaded only by the server.
+Example `.env` values:
 
 ```dotenv
 DEMO_MODE=false
 PORT=3000
 SESSION_SECRET=<at least 32 random characters>
-REPORTING_USERS=[{"id":"user-1","name":"Your Name","email":"you@example.com","passwordHash":"scrypt:<salt>:<hash>","tenant":"your-tenant","role":"administrator"}]
-DATATAP_BASE_URL=https://develop-api.esper.cloud/api/data-tap/v0
-DATATAP_API_KEY=<your server-side token>
+REPORTING_USERS=[{"id":"user-1","name":"Your Name","email":"you@example.com","passwordHash":"scrypt:<salt>:<hash>","tenant":"workspace-1","role":"administrator"}]
 ```
 
-Generate a session secret with `node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"`. Generate a password hash with `npm run hash-password`; password entry is hidden. The script prints a salted scrypt hash for the user configuration, never the plaintext password.
+The `tenant` on a user is the application workspace identifier. Sign in and configure its Esper connection through Connection settings, or supply server-side credentials:
 
-For multiple tenants, set `DATATAP_TENANTS` to a JSON map of tenant IDs to `{ "baseUrl": "https://...", "apiKey": "..." }`. The single global key is accepted only when all configured users belong to the requesting tenant. Each configured credential must itself be restricted to its tenant by Esper. Do not give two unrelated tenants the same unrestricted upstream credential.
+```dotenv
+DATATAP_BASE_URL=https://acme-api.esper.cloud/api/data-tap/v0
+DATATAP_API_KEY=<server-side API key>
+```
 
-The adapter implements the contract supplied in the specs:
+For multiple workspaces, use an explicit credential map:
 
-1. `POST /queries/` with `{ query, latest_data }` and a backend-only Bearer token.
-2. Read `content.id` and `content.status`, then poll `GET /queries/{id}`. Top-level response envelopes are also supported.
-3. Normalize `content.result.data_array` against the semantic output columns, converting numeric results.
-4. Stop on success, failure, cancellation, or the 60-second deadline.
+```dotenv
+DATATAP_TENANTS={"workspace-1":{"baseUrl":"https://acme-api.esper.cloud/api/data-tap/v0","apiKey":"<key>"}}
+```
 
-**Live connectivity verified on September 10, 2026:** bounded device and Devices → Groups queries completed successfully using user-supplied credentials. DataTap returns ID, status, and results under `content`. The compiler uses strictly validated bare identifiers, because ANSI double-quoted identifiers failed on the live endpoint. The tenant hostname and Bearer authorization follow [Esper’s API guide](https://help.esper.io/hc/en-us/articles/14199291792145-Getting-Started-with-APIs). Sample-only schema assumptions (such as battery and model fields) still need validation for each tenant; they are centralized in `server/catalog.mjs` and the demo module.
+The global key is accepted only when all configured users belong to the requesting workspace. Each upstream credential must have appropriate Esper tenant permissions. `.env` and `.data/` are ignored by Git.
 
-## Deployment boundaries
+## Caching and request limits
 
-This is a single-process, locally runnable MVP, not a completed enterprise deployment. The backend binds to loopback. Put it behind a same-origin HTTPS reverse proxy when deploying; production cookies are Secure and HttpOnly. Configure Express proxy trust narrowly if the proxy terminates TLS so origin validation sees the actual request protocol. Store runtime secrets in your deployment's secret manager rather than committed files.
+The application caches query results, rather than separate copies for each visualization. Identical concurrent queries share one upstream job. Cache keys distinguish users, workspaces, connection revisions, query semantics, preview/full mode, and live/demo data.
 
-The definition store uses synchronous atomic JSON-file replacement and keeps a bounded audit history. Use a backed-up persistent volume for one server instance. Replace this store with a transactional database before running multiple writers/replicas. Execution results are transient and expire after an hour; API query jobs do not survive a server restart; known upstream IDs can be resumed after transient failures within the running process. There is no durable worker queue, SSO integration, password-reset UI, shared-public links, external embedding, or live fleet streaming.
+| Result scope | Fresh lifetime | Maximum stale age |
+|---|---:|---:|
+| Latest Devices, Applications, Groups, Users | 10 minutes | 60 minutes |
+| Latest Device Statistics | 5 minutes | 30 minutes |
+| Past snapshot or entirely historical range | 24 hours | 7 days |
 
-Relative-date presets, nested AND/OR groups, arbitrary relationship editing, category/series pivoting, dashboard-wide filters, scheduled delivery, execution-history UI, folder management, and comparison-period KPI trends are deferred. Stacked charts currently stack multiple metrics; they do not pivot a second dimension into series. PNG export exports the chart plot; dashboard PDF export is not included.
+Eligible stale results remain visible while refreshing. Failed refreshes retain eligible results with an explanation; hard-expired results are hidden. Cache hits retain the original fetch time. Historical snapshots are not assumed immutable.
 
-Caching is implemented for this single-process app: memory + policy-controlled IndexedDB/Dexie, server result reuse and query deduplication, stale refresh with age indicators, and a persisted DataTap request budget. See [implementation and configuration](docs/caching-implementation.md) and the [design](specs/datatap-reporting-cache-design.md). Defaults are 10-minute latest-data TTLs, 5 minutes for statistics, and 24 hours for past snapshots. `DATATAP_REQUESTS_PER_HOUR` defaults to 25; sensitive browser persistence is disabled unless `BROWSER_CACHE_SENSITIVE=true`. Server restarts invalidate result namespaces; saved reports remain intact.
+- **Browser memory:** up to 50 entries / 30 MiB.
+- **IndexedDB:** eligible results, with an 80 MiB target within a 100 MiB budget; authorized catalog metadata lasts 12 hours.
+- **Server:** up to 100 MiB overall / 25 MiB per authorization namespace.
+- Results over 10 MiB are not cached. Browser-storage failures fall back to memory/server behavior.
+- Sensitive detail fields default to memory-only browser storage. Credentials are never cached in the browser.
 
-No hosting deployment was performed. The source project and running local preview are the deliverables.
+Configuration:
 
-## Architecture
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATATAP_REQUESTS_PER_HOUR` | `25` | Positive rolling request budget per DataTap endpoint; includes submissions, polls, and connection tests |
+| `BROWSER_CACHE_SENSITIVE` | Unset/false | Set to `true` only when organizational policy permits sensitive browser persistence |
+| `DATA_DIR` | `.data` | Server definition, credential, and request-budget storage directory |
 
-- `src/App.tsx`: application shell, navigation, object lists, session and object actions.
-- `src/ReportBuilder.tsx`: declarative configuration, previews, visualization selection, save and export flows.
-- `src/DashboardView.tsx`: responsive editable dashboard and independent widget execution.
-- `src/Explorer.tsx`, `src/components.tsx`: metadata browser, tables, charts, accessible native dialogs.
-- `server/catalog.mjs`: allowlisted semantic metadata, relationships, filter and aggregation capabilities.
-- `server/query.mjs`: validation, SQL generation, normalized columns, and sample-data evaluation.
-- `server/datatap.mjs`: bounded server-only submit/poll/normalize adapter.
-- `server/index.mjs`: authenticated/tenant-scoped APIs, persistence, audit and execution lifecycle.
-- `tests/`: query semantics, SQL safety, mocked DataTap contract, and authenticated API integration checks.
+The server serializes upstream jobs per endpoint and persists budget accounting in `.data/request-budget.json`. A 429 response establishes a shared cooldown. When DataTap provides no reset time, the server uses a conservative one-hour local estimate. Other clients may also consume the tenant quota.
 
-All primary REST routes from the specs are implemented. `/api/reporting/query/compile` additionally provides the read-only query inspector, and `/api/session`, `/api/login`, `/api/logout` handle application sessions. Audit records are available to administrators at `/api/audit-events`.
+Use **Clear cached results** in the sidebar to remove local results and metadata without deleting saved reports. Server restarts invalidate result namespaces; the request-budget ledger and saved definitions survive.
 
-A feature-detected browser WebMCP tool opens existing saved reports through the same application state. It is optional; normal browsers need no WebMCP support. Registration was not validated in a WebMCP-capable browser.
+See [caching implementation](docs/caching-implementation.md) for API contracts, recovery behavior, privacy rules, and deployment limits, and [cache design](specs/datatap-reporting-cache-design.md) for the broader design.
 
-## Verification
+## Data semantics
 
-The test suite covers snapshot selection, historical join dates, aggregates and nulls, filter escaping and type compatibility, rejected identifiers/raw SQL, limit enforcement, sorting, DataTap polling/normalization/timeouts, login, roles, cross-origin mutation rejection, tenant isolation, reference integrity, and persistence after restart. Tests use a temporary server on port 3137 and a temporary store; they do not alter the demo workspace or call a real DataTap service.
+DataTap reports daily snapshots. Fetching fresh results does not mean each device just reported its current state.
 
-Frontend verification consists of TypeScript checking and a production build. A local HTTP readiness check confirms serving. Browser interaction/visual testing has not been performed.
+**Status at Snapshot** is derived from `last_seen` relative to `report_generation_timestamp`:
 
-## Brand asset
-
-`public/esper-logo.svg` is the official navigation wordmark downloaded from [esper.io](https://www.esper.io/), [original SVG](https://cdn.prod.website-files.com/68dc0aa637f28f93a0bbbb71/68ec7835a472683506853583_Group%201.svg). The original white asset is used on the sidebar; a CSS monochrome filter makes it visible on light login/loading surfaces.
-
-## Online/offline reports
-
-The live `devices` table does not contain a physical `status` column. Its `state` field describes provisioning. The semantic **Status at Snapshot** field is derived from `TRY_CAST(last_seen AS TIMESTAMP)` relative to `report_generation_timestamp`:
-
-- Online: last seen within 30 minutes of the snapshot.
+- Online: within 30 minutes.
 - Idle: more than 30 minutes, up to 24 hours.
 - Offline: more than 24 hours.
-- Unknown: missing or invalid last-seen/snapshot timestamps.
+- Unknown: missing or invalid timestamps.
 
-This describes the daily snapshot, not current live connectivity. The intervals follow [Esper's last-seen status panels](https://help.esper.io/hc/en-us/articles/12591504254225-Dashboard-Components). The same derivation is used by the SQL compiler and sample-data evaluator. Online/offline queries were verified against live DataTap. The original seeded offline inventory is migrated to verified device/group fields without overwriting customized column selections.
+The physical `devices.state` field describes provisioning, not connectivity.
+
+Device Statistics exposes individual memory, battery, network, and location fields extracted from JSON. Missing values remain empty; numeric extraction preserves real zeroes. Values with unverified units are not silently converted. Raw JSON remains compatible with older saved reports but is hidden from new field selections.
+
+Some fields are not provided by their live tables: Devices battery, Device Statistics CPU usage, Groups region, and Users display name. They are explicitly labeled unavailable. Use Device Statistics for battery data. Live filters and summaries over unsupported fields fail with a specific explanation rather than producing misleading totals.
+
+Schema and availability vary by tenant and snapshot. Catalog mappings are defined in `server/catalog.mjs` and `server/live-fields.mjs`. Tenant-specific validation reports are kept local and excluded from Git.
+
+## Development commands
+
+| Command | Action |
+|---|---|
+| `npm run dev` | Start the local API and Vite development frontend |
+| `npm run check` | TypeScript check |
+| `npm test` | Run automated tests with temporary stores, mocked DataTap, and fake IndexedDB |
+| `npm run build` | TypeScript check and optimized frontend build |
+| `npm start` | Serve the built frontend and API in production mode |
+| `npm run format` | Format source and tests |
+| `npm run hash-password` | Generate a password hash for configured users |
+
+Tests cover query validation, schema mappings, authentication/isolation, DataTap responses, result reuse, deduplication, invalidation, IndexedDB failures, quota accounting, and upstream query recovery. They do not call live DataTap or modify the application's saved workspace. HTTP integration tests need free local ports 3137, 3139, and 3142.
+
+For a local preview of the production bundle:
+
+```sh
+npm run build
+DEMO_MODE=true npm start
+```
+
+This preview still bypasses authentication. Do not expose it as a shared production service.
+
+## Project layout
+
+```text
+src/                  React application, report builder, dashboards, charts
+  api.ts              API execution, browser caching and refresh coordination
+  result-cache.ts     Memory and Dexie/IndexedDB storage
+  cache-status.tsx    Freshness indicators and invalidation handling
+server/
+  index.mjs           Authentication, CRUD, execution lifecycle and cache integration
+  catalog.mjs         Allowlisted datasets, fields and operators
+  query.mjs           Query validation, SQL compilation and demo evaluation
+  datatap.mjs         DataTap submission, polling, normalization and recovery
+  result-cache.mjs    Server cache identity, policy and bounded storage
+  request-budget.mjs  Persistent quota accounting and upstream scheduling
+  statistics-fields.mjs  Allowlisted JSON projections
+shared/               Shared cache canonicalization and label helpers
+tests/                Regression and integration tests
+specs/                Product requirements, design, story map and cache design
+docs/                 Field audits and implementation notes
+public/               Static assets, including the Esper wordmark
+.data/                Private runtime data; not committed
+```
+
+## Deployment and limitations
+
+The current application is designed for **one server process**. Saved definitions use atomic JSON-file replacement. Use a backed-up persistent volume; replace the definition store with a transactional database and add shared cache/lease/budget coordination before introducing replicas.
+
+The server binds to loopback. A shared deployment needs a same-origin HTTPS reverse proxy, correctly configured proxy trust, authenticated mode, secure cookies, and deployment-managed secrets. Encryption-key and credential files must remain private.
+
+Results and upstream job IDs are held in server memory. Known upstream IDs can be resumed after transient failures within the process, but jobs do not survive a server restart. There is no durable worker queue or offline reopening of analytics without authorization.
+
+Deferred features include SSO, scheduled delivery, execution-history UI, relative-date presets, nested filter groups, dashboard-wide filters, arbitrary relationship editing, local draft recovery, shared/public links, and dashboard PDF export. Stacked charts stack multiple metrics rather than pivoting a second dimension into series.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| All reports fail with a request-limit message | Wait for the quota/cooldown, or confirm the tenant's allowance before changing the configured budget. Repeated connection tests also consume requests. |
+| Unable to reach DataTap | Check the tenant slug and derived hostname. The tenant entry must not include a URL or an extra suffix. |
+| API key rejected | Verify the tenant, key, and DataTap permissions. A key must be supplied when changing tenants. |
+| Empty or unavailable fields | Check the field description and source-data availability; empty values are not automatically zero. |
+| Cached results look old | Check fetch age and snapshot date, then refresh. Refresh still obeys quota and deduplication. |
+| Browser storage unavailable | Reports continue through memory and the server cache; persistent browser caching is optional. |
+| Production startup fails | Build first, disable demo mode, and configure a session secret and authenticated users. |
+
+## Documentation
+
+- [Product requirements](specs/datatap-reporting-prd.md)
+- [Design specification](specs/datatap-reporting-design-spec.md)
+- [Story map](specs/datatap-reporting-story-map.md)
+- [Caching design](specs/datatap-reporting-cache-design.md)
+- [Caching implementation](docs/caching-implementation.md)
+
+The Esper wordmark in `public/esper-logo.svg` was sourced from [esper.io](https://www.esper.io/).
